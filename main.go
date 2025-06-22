@@ -1,19 +1,22 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/csv"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 )
 
 type ModbusReading struct {
-	RegisterPair string `json:"register_pair"`
-	LSR          int16  `json:"LSR"`
-	MSR          int16  `json:"MSR"`
+	RegisterPair string  `json:"register_pair"`
+	LSR          int16   `json:"LSR"`
+	MSR          int16   `json:"MSR"`
+	Value        float32 `json:"value"`
 }
 
-func readModbusReadingsFromCSV(filepath string) ([]ModbusReading, error) {
+func parseModbusReadingsFromCSV(filepath string) ([]ModbusReading, error) {
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, fmt.Errorf("error opening file: %w", err)
@@ -45,6 +48,7 @@ func readModbusReadingsFromCSV(filepath string) ([]ModbusReading, error) {
 			RegisterPair: record[0],
 			LSR:          int16(lsr),
 			MSR:          int16(msr),
+			Value:        decodeFloat32(int16(lsr), int16(msr)),
 		}
 
 		readings = append(readings, reading)
@@ -53,17 +57,26 @@ func readModbusReadingsFromCSV(filepath string) ([]ModbusReading, error) {
 	return readings, nil
 }
 
+func decodeFloat32(lsr int16, msr int16) float32 {
+	// Use uint16 to pack bytes
+	buf := make([]byte, 4)
+	binary.LittleEndian.PutUint16(buf[0:], uint16(lsr))
+	binary.LittleEndian.PutUint16(buf[2:], uint16(msr))
+	bits := binary.LittleEndian.Uint32(buf)
+	return math.Float32frombits(bits)
+}
+
 func main() {
-	readings, err := readModbusReadingsFromCSV("modbus_reading.csv")
+	readings, err := parseModbusReadingsFromCSV("modbus_reading.csv")
 	if err != nil {
 		fmt.Printf("Error reading CSV: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Successfully read %d modbus readings\n", len(readings))
+	fmt.Printf("Successfully parsed %d modbus readings\n", len(readings))
 
-	// Print first few readings as example
-	for i := 0; i < 3 && i < len(readings); i++ {
-		fmt.Printf("%+v\n", readings[i])
+	//print the register pair and value
+	for _, reading := range readings {
+		fmt.Printf("%s: %.2f\n", reading.RegisterPair, reading.Value)
 	}
 }
